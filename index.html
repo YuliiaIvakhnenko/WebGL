@@ -2,7 +2,7 @@
 <html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 
-<title>PA#1</title>
+<title>PA#2</title>
 <style>
     body {
         background-color: #EEEEEE;
@@ -14,6 +14,7 @@
 <script src="./shader.gpu"></script>
 <script src="./model_drop.js"></script>
 <script src="./main.js"></script>
+<script src="./LightSphere.js"></script>
 
 </head>
 <body onload="init()">
@@ -23,9 +24,18 @@
 <p id="message">Drag your mouse on the drop to rotate it.<br>
 (On a touch screen, you can use your finger.)</p>
 
+  <div id="controls">
+    <label>U granularity: 
+      <input type="range" id="uSlider" min="10" max="100" value="50">
+    </label>
+    &nbsp;
+    <label>V granularity: 
+      <input type="range" id="vSlider" min="10" max="100" value="50">
+    </label>
+  </div>
 
 <div id="canvas-holder">
-   <canvas width="600" height="600" id="webglcanvas" style="background-color:red"></canvas>
+  <canvas id="webglcanvas" width="600" height="600" style="background-color:white"></canvas>
 </div>
 
 

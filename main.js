@@ -4,11 +4,21 @@ let gl;                         // The webgl context.
 let surface;                    // A surface model
 let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
+let lightBall;
 
 function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
 
+function transformPoint(m, v) {
+    let x = v[0], y = v[1], z = v[2], w = v[3];
+    return [
+        m[0] * x + m[4] * y + m[8]  * z + m[12] * w,
+        m[1] * x + m[5] * y + m[9]  * z + m[13] * w,
+        m[2] * x + m[6] * y + m[10] * z + m[14] * w,
+        m[3] * x + m[7] * y + m[11] * z + m[15] * w
+    ];
+}
 
 // Constructor
 function Model(name) {
@@ -41,50 +51,78 @@ function ShaderProgram(name, program) {
     this.name = name;
     this.prog = program;
 
-    // Location of the attribute variable in the shader program.
-    this.iAttribVertex = -1;
-    // Location of the uniform specifying a color for the primitive.
-    this.iColor = -1;
-    // Location of the uniform matrix representing the combined transformation.
-    this.iModelViewProjectionMatrix = -1;
+    this.iAttribVertex = gl.getAttribLocation(program, "vertex");
+    this.iAttribNormal = gl.getAttribLocation(program, "normal");
+
+    this.iModelViewProjectionMatrix = gl.getUniformLocation(program, "ModelViewProjectionMatrix");
+    this.iModelViewMatrix = gl.getUniformLocation(program, "ModelViewMatrix");
+    this.iNormalMatrix = gl.getUniformLocation(program, "NormalMatrix");
+
+    this.iLightPos = gl.getUniformLocation(program, "lightPos");
+    this.iColor = gl.getUniformLocation(program, "color");
 
     this.Use = function() {
         gl.useProgram(this.prog);
     }
 }
 
+function drawLightBall(lightWorld, modelViewMatrix, projection) {
+    let T = m4.translation(lightWorld[0], lightWorld[1], lightWorld[2]);
+    let mv = m4.multiply(modelViewMatrix, T);
+    let mvp = m4.multiply(projection, mv);
 
-/* Draws a colored cube, along with a set of coordinate axes.
- * (Note that the use of the above drawPrimitive function is not an efficient
- * way to draw with WebGL.  Here, the geometry is so simple that it doesn't matter.)
- */
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, mv);
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
+
+    let normalMatrix = m4.transpose(m4.inverse(mv));
+    gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalMatrix);
+
+    lightBall.Draw();
+}
+
 function draw() { 
-    gl.clearColor(0,0,0,1);
+    gl.clearColor(1,1,1,1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
+
     /* Set the values of the projection transformation */
     let projection = m4.perspective(Math.PI / 5, 1, 4, 20);
-    
+
     /* Get the view matrix from the SimpleRotator object.*/
     let modelView = spaceball.getViewMatrix();
+    let translate = m4.translation(0,0,-10);
+    let modelViewMatrix = m4.multiply(translate, modelView);
 
-    let rotateToPointZero = m4.axisRotation([0.707,0.707,0], 0.7);
-    let translateToPointZero = m4.translation(0,0,-10);
+    let mvp = m4.multiply(projection, modelViewMatrix);
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelViewMatrix);
 
-    let matAccum0 = m4.multiply(rotateToPointZero, modelView );
-    let matAccum1 = m4.multiply(translateToPointZero, matAccum0 );
-        
-    /* Multiply the projection matrix times the modelview matrix to give the
-       combined transformation matrix, and send that to the shader program. */
-    let modelViewProjection = m4.multiply(projection, matAccum1 );
+    let normalMatrix = m4.transpose(m4.inverse(modelViewMatrix));
+    gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalMatrix);
 
-    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
-    
-    /* Draw the six faces of a cube, with different colors. */
-    gl.uniform4fv(shProgram.iColor, [1,1,0,1] );
+    let t = performance.now() * 0.001;
+    let lightWorld = [
+        4 * Math.cos(t),
+        2 + Math.sin(t * 0.6) * 1.5,
+        4 * Math.sin(t)
+    ];
+
+    let lightWorld4 = [lightWorld[0], lightWorld[1], lightWorld[2], 1.0];
+    let lightEye4 = transformPoint(modelViewMatrix, lightWorld4);
+    let lightEye = [
+        lightEye4[0] / lightEye4[3],
+        lightEye4[1] / lightEye4[3],
+        lightEye4[2] / lightEye4[3]
+    ];
+
+    gl.uniform3fv(shProgram.iLightPos, new Float32Array(lightEye));
 
     surface.Draw();
+
+    drawLightBall(lightWorld, modelViewMatrix, projection);
+
+    requestAnimationFrame(draw);
 }
+
 
 function CreateSurfaceData()
 {
@@ -106,11 +144,8 @@ function initGL() {
     shProgram = new ShaderProgram('Basic', prog);
     shProgram.Use();
 
-    shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
-    shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
-
     surface = new ModelDrop('DropSurface');
+    lightBall = new LightSphere(0.15, 16, 16);
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -175,6 +210,18 @@ function init() {
     }
 
     spaceball = new TrackballRotator(canvas, draw, 0);
+
+    document.getElementById("uSlider").addEventListener("input", function() {
+        let u = Number(this.value);
+        let v = Number(document.getElementById("vSlider").value);
+        surface = new ModelDrop("Drop", u, v);
+    });
+
+    document.getElementById("vSlider").addEventListener("input", function() {
+        let u = Number(document.getElementById("uSlider").value);
+        let v = Number(this.value);
+        surface = new ModelDrop("Drop", u, v);
+    });
 
     draw();
 }
