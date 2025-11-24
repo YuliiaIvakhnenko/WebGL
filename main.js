@@ -6,6 +6,10 @@ let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
 let lightBall;
 
+let diffuseTexture;
+let specularTexture;
+let normalTexture;
+
 function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
@@ -53,13 +57,22 @@ function ShaderProgram(name, program) {
 
     this.iAttribVertex = gl.getAttribLocation(program, "vertex");
     this.iAttribNormal = gl.getAttribLocation(program, "normal");
+    this.iAttribTexCoord = gl.getAttribLocation(program, "texCoord");
+    this.iAttribTangent = gl.getAttribLocation(program, "tangent");
 
     this.iModelViewProjectionMatrix = gl.getUniformLocation(program, "ModelViewProjectionMatrix");
     this.iModelViewMatrix = gl.getUniformLocation(program, "ModelViewMatrix");
     this.iNormalMatrix = gl.getUniformLocation(program, "NormalMatrix");
 
     this.iLightPos = gl.getUniformLocation(program, "lightPos");
-    this.iColor = gl.getUniformLocation(program, "color");
+
+    this.iDiffuseMap = gl.getUniformLocation(program, "diffuseMap");
+    this.iSpecularMap = gl.getUniformLocation(program, "specularMap");
+    this.iNormalMap = gl.getUniformLocation(program, "normalMap");
+
+    this.iUseDiffuseMap  = gl.getUniformLocation(program, "useDiffuseMap");
+    this.iUseSpecularMap = gl.getUniformLocation(program, "useSpecularMap");
+    this.iUseNormalMap   = gl.getUniformLocation(program, "useNormalMap");
 
     this.Use = function() {
         gl.useProgram(this.prog);
@@ -77,6 +90,10 @@ function drawLightBall(lightWorld, modelViewMatrix, projection) {
     let normalMatrix = m4.transpose(m4.inverse(mv));
     gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalMatrix);
 
+    gl.uniform1i(shProgram.iUseDiffuseMap, 0);
+    gl.uniform1i(shProgram.iUseSpecularMap, 0);
+    gl.uniform1i(shProgram.iUseNormalMap, 0);
+
     lightBall.Draw();
 }
 
@@ -85,6 +102,21 @@ function draw() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     /* Set the values of the projection transformation */
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, specularTexture);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+
+    let useDiffuse = document.getElementById("chkDiffuse").checked;
+    let useSpecular = document.getElementById("chkSpecular").checked;
+    let useNormal = document.getElementById("chkNormal").checked;
+
+    gl.uniform1i(shProgram.iUseDiffuseMap,  useDiffuse ? 1 : 0);
+    gl.uniform1i(shProgram.iUseSpecularMap, useSpecular ? 1 : 0);
+    gl.uniform1i(shProgram.iUseNormalMap,   useNormal ? 1 : 0);
+
     let projection = m4.perspective(Math.PI / 5, 1, 4, 20);
 
     /* Get the view matrix from the SimpleRotator object.*/
@@ -123,20 +155,6 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
-
-function CreateSurfaceData()
-{
-    let vertexList = [];
-
-    for (let i=0; i<360; i+=5) {
-        vertexList.push( Math.sin(deg2rad(i)), 1, Math.cos(deg2rad(i)) );
-        vertexList.push( Math.sin(deg2rad(i)), 0, Math.cos(deg2rad(i)) );
-    }
-
-    return vertexList;
-}
-
-
 /* Initialize the WebGL context. Called from init() */
 function initGL() {
     let prog = createProgram( gl, vertexShaderSource, fragmentShaderSource );
@@ -148,8 +166,15 @@ function initGL() {
     lightBall = new LightSphere(0.15, 16, 16);
 
     gl.enable(gl.DEPTH_TEST);
-}
 
+    diffuseTexture  = LoadTexture("textures/pedraStoneDiffuse.jpg");
+    specularTexture = LoadTexture("textures/pedraStoneSpecular.jpg");
+    normalTexture   = LoadTexture("textures/pedraStoneNormal.jpg");
+
+    gl.uniform1i(shProgram.iDiffuseMap,  0);
+    gl.uniform1i(shProgram.iSpecularMap, 1);
+    gl.uniform1i(shProgram.iNormalMap,   2);
+}
 
 /* Creates a program for use in the WebGL context gl, and returns the
  * identifier for that program.  If an error occurs while compiling or

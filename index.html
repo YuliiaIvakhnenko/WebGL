@@ -2,7 +2,7 @@
 <html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 
-<title>PA#2</title>
+    <title>PA#3 Textured Drop</title>
 <style>
     body {
         background-color: #EEEEEE;
@@ -19,8 +19,7 @@
 </head>
 <body onload="init()">
 
-<h2>Drop with "Trackball" Mouse Rotation</h2>
-
+<h2>Drop Surface with Textures</h2>
 <p id="message">Drag your mouse on the drop to rotate it.<br>
 (On a touch screen, you can use your finger.)</p>
 
@@ -36,6 +35,12 @@
 
 <div id="canvas-holder">
   <canvas id="webglcanvas" width="600" height="600" style="background-color:white"></canvas>
+    <fieldset>
+        <legend>Texture</legend>
+        <label><input type="checkbox" id="chkDiffuse" checked> Use Diffuse Map</label><br>
+        <label><input type="checkbox" id="chkSpecular" checked> Use Specular Map</label><br>
+        <label><input type="checkbox" id="chkNormal" checked> Use Normal Map</label>
+    </fieldset>
 </div>
 
 

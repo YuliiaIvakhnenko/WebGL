@@ -1,6 +1,8 @@
 const vertexShaderSource = `
 attribute vec3 vertex;
 attribute vec3 normal;
+attribute vec2 texCoord;
+attribute vec3 tangent;
 
 uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ModelViewMatrix;
@@ -9,30 +11,113 @@ uniform vec3 lightPos;
 
 varying vec4 vColor;
 
+varying vec3 vPosition;   
+varying vec2 vTexCoord;
+varying vec3 vT;
+varying vec3 vB;
+varying vec3 vN;
+
 void main(void) {
 
     vec4 vertPos = ModelViewMatrix * vec4(vertex, 1.0);
     vec3 N = normalize((NormalMatrix * vec4(normal, 0.0)).xyz);
+    vec3 T = normalize((NormalMatrix * vec4(tangent, 0.0)).xyz);
 
-    vec3 L = normalize(lightPos - vertPos.xyz);
-    vec3 V = normalize(-vertPos.xyz);
-    vec3 R = reflect(-L, N);
+    vec3 Ngs = normalize(N);
+    vec3 Tgs = normalize(T - dot(T, Ngs) * Ngs);
+    vec3 B   = normalize(cross(Ngs, Tgs));
 
-    vec3 ambient  = 0.2 * vec3(0.5);
-    float diff    = max(dot(N, L), 0.0);
-    vec3 diffuse  = 0.7 * diff * vec3(0.5);
-    float spec    = pow(max(dot(R, V), 0.0), 32.0);
-    vec3 specular = 0.5 * spec * vec3(1.0);
-
-    vColor = vec4(ambient + diffuse + specular, 1.0);
+    vPosition = vertPos.xyz;
+    vTexCoord = texCoord;
+    vT = Tgs;
+    vB = B;
+    vN = Ngs;
 
     gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
 }
 `;
 const fragmentShaderSource = `
 precision mediump float;
-varying vec4 vColor;
+
+varying vec3 vPosition;
+varying vec2 vTexCoord;
+varying vec3 vT;
+varying vec3 vB;
+varying vec3 vN;
+
+uniform vec3 lightPos;
+
+uniform sampler2D diffuseMap;
+uniform sampler2D specularMap;
+uniform sampler2D normalMap;
+
+uniform bool useDiffuseMap;
+uniform bool useSpecularMap;
+uniform bool useNormalMap;
+
 void main(void) {
-    gl_FragColor = vColor;
+
+    vec3 L = normalize(lightPos - vPosition);
+    vec3 V = normalize(-vPosition);
+
+    vec3 N;
+    if (useNormalMap) {
+        vec3 nTex = texture2D(normalMap, vTexCoord).rgb;
+        nTex = nTex * 2.0 - 1.0;      
+        mat3 TBN = mat3(vT, vB, vN);  
+        N = normalize(TBN * nTex);
+    } else {
+        N = normalize(vN);
+    }
+
+    float diff = max(dot(N, L), 0.0);
+    vec3 R = reflect(-L, N);
+    float spec = pow(max(dot(R, V), 0.0), 32.0);
+
+    vec3 baseDiffuse  = vec3(0.7);
+    vec3 baseSpecular = vec3(1.0);
+    vec3 ambientColor = vec3(0.1);
+
+    vec3 kd = baseDiffuse;
+    vec3 ks = baseSpecular;
+
+    if (useDiffuseMap) {
+        kd *= texture2D(diffuseMap, vTexCoord).rgb;
+    }
+    if (useSpecularMap) {
+        ks *= texture2D(specularMap, vTexCoord).rgb;
+    }
+
+    vec3 color = ambientColor * kd + diff * kd + spec * ks;
+
+    gl_FragColor = vec4(color, 1.0);
 }
 `;
+
+function LoadTexture(url)
+{
+    var texture = gl.createTexture();
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+        1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 255, 255]));
+
+    var image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = url;
+    image.addEventListener('load', () => {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0,
+            gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+        draw();
+    });
+
+    return texture;
+}
