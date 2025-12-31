@@ -16,6 +16,35 @@ function ModelDrop(name, uCount = 50, vCount = 50, uMax = 4, vMax = 4) {
         return [u/2, -z/2, v/2];
     }
 
+    this.evalAtUV = function(uTex, vTex) {
+        const uParam = -uMax + uTex * (2 * uMax);
+        const vParam = -vMax + vTex * (2 * vMax);
+        return dropSurface(uParam, vParam);
+    };
+
+    this.normalAtUV = function(uTex, vTex) {
+        const uParam = -uMax + uTex * (2 * uMax);
+        const vParam = -vMax + vTex * (2 * vMax);
+
+        const epsU = (2 * uMax) * 0.001;
+        const epsV = (2 * vMax) * 0.001;
+
+        const p  = dropSurface(uParam, vParam);
+        const pu = dropSurface(uParam + epsU, vParam);
+        const pv = dropSurface(uParam, vParam + epsV);
+
+        const tu = [pu[0]-p[0], pu[1]-p[1], pu[2]-p[2]];
+        const tv = [pv[0]-p[0], pv[1]-p[1], pv[2]-p[2]];
+
+        let nx = tu[1]*tv[2] - tu[2]*tv[1];
+        let ny = tu[2]*tv[0] - tu[0]*tv[2];
+        let nz = tu[0]*tv[1] - tu[1]*tv[0];
+
+        const len = Math.hypot(nx, ny, nz) || 1.0;
+        return [nx/len, ny/len, nz/len];
+    };
+
+
     function generateSurface() {
         let vertices = [];
         let normals = [];

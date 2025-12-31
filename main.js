@@ -10,6 +10,22 @@ let diffuseTexture;
 let specularTexture;
 let normalTexture;
 
+let texRotationAngle = 0.0;  
+let texRotationBase  = 0.0;
+
+const TWO_PI = Math.PI * 2.0;
+
+let keysDown = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+let shiftDown = false;
+
+let texCenterU = 0.5;
+let texCenterV = 0.5;
+let texScaleU = 1.0;
+let texScaleV = 1.0;
+
+let texPivotBall;
+let texPivotPos = [0, 0, 0];
+
 function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
@@ -22,6 +38,97 @@ function transformPoint(m, v) {
         m[2] * x + m[6] * y + m[10] * z + m[14] * w,
         m[3] * x + m[7] * y + m[11] * z + m[15] * w
     ];
+}
+
+function isPowerOf2(value) {
+    return (value & (value - 1)) === 0;
+}
+
+function LoadTexture(url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([200, 200, 200, 255])
+    );
+
+    const image = new Image();
+    image.onload = function () {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+        if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    };
+    image.src = url;
+
+    return texture;
+}
+
+
+function wrap01(x) {
+    x = x % 1.0;
+    return (x < 0.0) ? (x + 1.0) : x;
+}
+
+function wrapAngle(angle) {
+    angle = angle % TWO_PI;
+    return (angle < 0.0) ? (angle + TWO_PI) : angle;
+}
+
+function updateTexRuntime(dt) {
+    let moved = false;
+    const speed = shiftDown ? 0.60 : 0.25;
+    const step = speed * dt;
+
+    let rotDir = 0;
+
+    if (keysDown.KeyA) { texCenterU -= step; moved = true; }
+    if (keysDown.KeyD) { texCenterU += step; moved = true; }
+    if (keysDown.KeyW) { texCenterV += step; moved = true; }
+    if (keysDown.KeyS) { texCenterV -= step; moved = true; }
+
+    if (keysDown.KeyA) rotDir -= 1;
+    if (keysDown.KeyD) rotDir += 1;
+    if (keysDown.KeyW) rotDir += 1;
+    if (keysDown.KeyS) rotDir -= 1;
+
+    if (moved) {
+        texCenterU = wrap01(texCenterU);
+        texCenterV = wrap01(texCenterV);
+        if (window._syncTexCenterUI) window._syncTexCenterUI();
+    }
+
+    if (rotDir !== 0) {
+        const rotSpeed = shiftDown ? 3.0 : 1.2;
+        texRotationBase = wrapAngle(texRotationBase + rotDir * rotSpeed * dt);
+
+        const angleSlider = document.getElementById('texAngle');
+        if (angleSlider) angleSlider.value = texRotationBase;
+    }
+
+    texRotationAngle = texRotationBase;
+
+    const angDisp = document.getElementById('texAngleDisp');
+    if (angDisp) angDisp.textContent = texRotationAngle.toFixed(2);
 }
 
 // Constructor
@@ -74,6 +181,13 @@ function ShaderProgram(name, program) {
     this.iUseSpecularMap = gl.getUniformLocation(program, "useSpecularMap");
     this.iUseNormalMap   = gl.getUniformLocation(program, "useNormalMap");
 
+    this.uTexRotationAngle = gl.getUniformLocation(program, "u_texRotationAngle");
+    this.uTexCenterPoint   = gl.getUniformLocation(program, "u_texCenterPoint");
+    this.uTexScale         = gl.getUniformLocation(program, "u_texScale");
+
+    this.uUseObjectColor = gl.getUniformLocation(program, "u_useObjectColor");
+    this.uObjectColor    = gl.getUniformLocation(program, "u_objectColor");
+
     this.Use = function() {
         gl.useProgram(this.prog);
     }
@@ -102,6 +216,12 @@ function draw() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     /* Set the values of the projection transformation */
+    const now = performance.now();
+    if (draw._lastTime === undefined) draw._lastTime = now;
+    const dt = Math.min(0.05, (now - draw._lastTime) / 1000.0);
+    draw._lastTime = now;
+    updateTexRuntime(dt);
+
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
     gl.activeTexture(gl.TEXTURE1);
@@ -116,6 +236,10 @@ function draw() {
     gl.uniform1i(shProgram.iUseDiffuseMap,  useDiffuse ? 1 : 0);
     gl.uniform1i(shProgram.iUseSpecularMap, useSpecular ? 1 : 0);
     gl.uniform1i(shProgram.iUseNormalMap,   useNormal ? 1 : 0);
+
+     gl.uniform1f(shProgram.uTexRotationAngle, texRotationAngle);
+    gl.uniform2f(shProgram.uTexCenterPoint, texCenterU, texCenterV);
+    gl.uniform2f(shProgram.uTexScale, texScaleU, texScaleV);
 
     let projection = m4.perspective(Math.PI / 5, 1, 4, 20);
 
@@ -150,6 +274,9 @@ function draw() {
 
     surface.Draw();
 
+    updateTexPivotPoint();
+    drawTexPivotBall(modelViewMatrix, projection);
+
     drawLightBall(lightWorld, modelViewMatrix, projection);
 
     requestAnimationFrame(draw);
@@ -164,6 +291,8 @@ function initGL() {
 
     surface = new ModelDrop('DropSurface');
     lightBall = new LightSphere(0.15, 16, 16);
+    // Smaller marker to look like a "point" on the surface
+    texPivotBall = new LightSphere(0.05, 14, 14);
 
     gl.enable(gl.DEPTH_TEST);
 
@@ -236,7 +365,104 @@ function init() {
 
     spaceball = new TrackballRotator(canvas, draw, 0);
 
-    document.getElementById("uSlider").addEventListener("input", function() {
+    function safeNumber(x, fallback = 0.0) {
+        return (typeof x === 'number' && isFinite(x)) ? x : fallback;
+    }
+
+    
+    function syncTexCenterUI() {
+        texCenterU = wrap01(texCenterU);
+        texCenterV = wrap01(texCenterV);
+
+        const disp = document.getElementById("texCenterDisp");
+        if (disp) disp.textContent = `Center UV: ${texCenterU.toFixed(2)}, ${texCenterV.toFixed(2)}`;
+
+        const uInp = document.getElementById("texCenterUInput");
+        const vInp = document.getElementById("texCenterVInput");
+        if (uInp) uInp.value = texCenterU.toFixed(2);
+        if (vInp) vInp.value = texCenterV.toFixed(2);
+    }
+
+    function setCenterFromInputs() {
+        const uInp = document.getElementById("texCenterUInput");
+        const vInp = document.getElementById("texCenterVInput");
+        if (!uInp || !vInp) return;
+
+        texCenterU = wrap01(safeNumber(parseFloat(uInp.value), texCenterU));
+        texCenterV = wrap01(safeNumber(parseFloat(vInp.value), texCenterV));
+        syncTexCenterUI();
+    }
+
+    (function initTexTransformUI() {
+        const btn = document.getElementById("btnSetCenter");
+        if (btn) btn.addEventListener("click", setCenterFromInputs);
+
+        const uInp = document.getElementById("texCenterUInput");
+        const vInp = document.getElementById("texCenterVInput");
+        if (uInp) uInp.addEventListener("change", setCenterFromInputs);
+        if (vInp) vInp.addEventListener("change", setCenterFromInputs);
+
+        const angleSlider = document.getElementById("texAngle");
+        const angleDisp = document.getElementById("texAngleDisp");
+        if (angleSlider) {
+            const onAngle = () => {
+                texRotationBase = parseFloat(angleSlider.value);
+                texRotationAngle = texRotationBase;
+                if (angleDisp) angleDisp.textContent = texRotationAngle.toFixed(2);
+};
+            angleSlider.addEventListener("input", onAngle);
+            onAngle();
+        }
+
+        const su = document.getElementById("texScaleU");
+        const sv = document.getElementById("texScaleV");
+        texScaleU = su ? parseFloat(su.value) : 1.0;
+        texScaleV = sv ? parseFloat(sv.value) : 1.0;
+
+        syncTexCenterUI();
+    })();
+    window.addEventListener('keydown', (event) => {
+        const codes = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight'];
+        if (!codes.includes(event.code)) return;
+        event.preventDefault();
+
+        if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+            shiftDown = true;
+            return;
+        }
+
+        keysDown[event.code] = true;
+
+        const nudge = event.shiftKey ? 0.05 : 0.01;
+        if (event.code === 'KeyA') texCenterU -= nudge;
+        if (event.code === 'KeyD') texCenterU += nudge;
+        if (event.code === 'KeyW') texCenterV += nudge;
+        if (event.code === 'KeyS') texCenterV -= nudge;
+
+        const rotNudge = event.shiftKey ? 0.25 : 0.10;
+        if (event.code === 'KeyA' || event.code === 'KeyS') texRotationBase -= rotNudge;
+        if (event.code === 'KeyD' || event.code === 'KeyW') texRotationBase += rotNudge;
+        texRotationBase = wrapAngle(texRotationBase);
+
+        const angleSlider = document.getElementById('texAngle');
+        if (angleSlider) angleSlider.value = texRotationBase;
+
+        syncTexCenterUI();
+    });
+
+    window.addEventListener('keyup', (event) => {
+        const codes = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight'];
+        if (!codes.includes(event.code)) return;
+        event.preventDefault();
+
+        if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+            shiftDown = false;
+            return;
+        }
+
+        keysDown[event.code] = false;
+    });
+document.getElementById("uSlider").addEventListener("input", function() {
         let u = Number(this.value);
         let v = Number(document.getElementById("vSlider").value);
         surface = new ModelDrop("Drop", u, v);
@@ -248,5 +474,40 @@ function init() {
         surface = new ModelDrop("Drop", u, v);
     });
 
-    draw();
+draw();
 }
+function updateTexPivotPoint() {
+    if (!surface || typeof surface.evalAtUV !== "function") return;
+
+    const p = surface.evalAtUV(texCenterU, texCenterV);
+    const n = surface.normalAtUV(texCenterU, texCenterV);
+
+    const offset = 0.05;
+    texPivotPos = [p[0] + n[0] * offset, p[1] + n[1] * offset, p[2] + n[2] * offset];
+}
+
+function drawTexPivotBall(modelViewMatrix, projection) {
+    const T = m4.translation(texPivotPos[0], texPivotPos[1], texPivotPos[2]);
+    const mv  = m4.multiply(modelViewMatrix, T);
+    const mvp = m4.multiply(projection, mv);
+
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, mv);
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
+
+    const normalMatrix = m4.transpose(m4.inverse(mv));
+    gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalMatrix);
+
+    gl.uniform1i(shProgram.iUseDiffuseMap, 0);
+    gl.uniform1i(shProgram.iUseSpecularMap, 0);
+    gl.uniform1i(shProgram.iUseNormalMap, 0);
+
+    gl.uniform1i(shProgram.uUseObjectColor, 1);
+    gl.uniform3f(shProgram.uObjectColor, 0.0, 1.0, 0.0);
+
+    gl.disable(gl.DEPTH_TEST);
+    texPivotBall.Draw();
+    gl.enable(gl.DEPTH_TEST);
+
+    gl.uniform1i(shProgram.uUseObjectColor, 0);
+}
+

@@ -7,15 +7,26 @@ attribute vec3 tangent;
 uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ModelViewMatrix;
 uniform mat4 NormalMatrix;
-uniform vec3 lightPos; 
+uniform vec3 lightPos;
 
-varying vec4 vColor;
+uniform bool u_useObjectColor;
+uniform vec3 u_objectColor;
+
+uniform float u_texRotationAngle;   // radians
+uniform vec2  u_texCenterPoint;     // (u,v) in [0..1]
+uniform vec2  u_texScale;           // (su, sv), 1.0 = no scale
 
 varying vec3 vPosition;   
 varying vec2 vTexCoord;
 varying vec3 vT;
 varying vec3 vB;
 varying vec3 vN;
+
+vec2 rotate2D(vec2 v, float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
 
 void main(void) {
 
@@ -28,7 +39,14 @@ void main(void) {
     vec3 B   = normalize(cross(Ngs, Tgs));
 
     vPosition = vertPos.xyz;
-    vTexCoord = texCoord;
+
+    vec2 tex = texCoord;
+    tex -= u_texCenterPoint;
+    tex *= u_texScale;                    // scaling around center
+    tex = rotate2D(tex, u_texRotationAngle);
+    tex += u_texCenterPoint;
+    vTexCoord = tex;
+
     vT = Tgs;
     vB = B;
     vN = Ngs;
@@ -36,6 +54,7 @@ void main(void) {
     gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
 }
 `;
+
 const fragmentShaderSource = `
 precision mediump float;
 
@@ -44,6 +63,9 @@ varying vec2 vTexCoord;
 varying vec3 vT;
 varying vec3 vB;
 varying vec3 vN;
+
+uniform bool u_useObjectColor;
+uniform vec3 u_objectColor;
 
 uniform vec3 lightPos;
 
@@ -78,14 +100,12 @@ void main(void) {
     vec3 baseSpecular = vec3(1.0);
     vec3 ambientColor = vec3(0.1);
 
-    vec3 kd = baseDiffuse;
-    vec3 ks = baseSpecular;
+    vec3 kd = u_useObjectColor ? u_objectColor : baseDiffuse;
+    vec3 ks = u_useObjectColor ? vec3(0.0)     : baseSpecular;
 
-    if (useDiffuseMap) {
-        kd *= texture2D(diffuseMap, vTexCoord).rgb;
-    }
-    if (useSpecularMap) {
-        ks *= texture2D(specularMap, vTexCoord).rgb;
+    if (!u_useObjectColor) {
+        if (useDiffuseMap)  kd *= texture2D(diffuseMap, vTexCoord).rgb;
+        if (useSpecularMap) ks *= texture2D(specularMap, vTexCoord).rgb;
     }
 
     vec3 color = ambientColor * kd + diff * kd + spec * ks;
