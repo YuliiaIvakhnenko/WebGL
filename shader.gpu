@@ -12,9 +12,9 @@ uniform vec3 lightPos;
 uniform bool u_useObjectColor;
 uniform vec3 u_objectColor;
 
-uniform float u_texRotationAngle;   // radians
-uniform vec2  u_texCenterPoint;     // (u,v) in [0..1]
-uniform vec2  u_texScale;           // (su, sv), 1.0 = no scale
+uniform float u_texRotationAngle;
+uniform vec2  u_texCenterPoint;   
+uniform vec2  u_texScale;           
 
 varying vec3 vPosition;   
 varying vec2 vTexCoord;
